@@ -14,7 +14,7 @@ user_agent = ''
 
 
 
-import lxml.html, pyotp, re, sys, time, traceback
+import datetime, json, lxml.html, os, pyotp, re, sys, time, traceback
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
@@ -152,7 +152,9 @@ def start_firefox_browser(user_agent):
 
 def log_into_account(email, password, two_fa_key=None):
     # Loading login page and waiting until ready
-    print("Logging into account " + email)
+    print("Logging into account manually")
+    browser.find_element_by_tag_name("body").send_keys(Keys.ESCAPE)
+    time.sleep(1)
     browser.get(epic_login_url + "?redirectUrl=" + uriencode(epic_store_url))
     if not wait_until_xpath_presence_located("//*[@id='email']"):
         raise TypeError("Unable to find email input field")
@@ -166,15 +168,20 @@ def log_into_account(email, password, two_fa_key=None):
     if (two_fa_key != None):
         wait_located_count = 0
         has_warned_captcha = False
+        two_fa_skipped = False
         while not wait_until_xpath_presence_located("//*[@id='code']", 1):
+            if wait_until_xpath_visible("//div[@id='user' and contains(@class, 'signed-in')]", 1): # This can happen when using cookies - Or if user gave 2FA key for account that doesn't have it
+                two_fa_skipped = True
+                break
             if (wait_located_count >= 3) & (has_warned_captcha == False):
                 print("Waiting - Cannot find 2FA input field - Possible captcha requiring completion")
                 has_warned_captcha = True
             wait_located_count += 1
-        browser.find_element_by_id('code').send_keys(Keys.HOME) # Make sure to be at beginning of field
-        browser.find_element_by_id('code').send_keys(pyotp.TOTP(two_fa_key).now()) # 2FA login code
-        if not wait_until_xpath_clickable_then_click("//*[@id='continue']"):
-            raise TypeError("Unable to find 2FA continue button")
+        if two_fa_skipped == False:
+            browser.find_element_by_id('code').send_keys(Keys.HOME) # Make sure to be at beginning of field
+            browser.find_element_by_id('code').send_keys(pyotp.TOTP(two_fa_key).now()) # 2FA login code
+            if not wait_until_xpath_clickable_then_click("//*[@id='continue']"):
+                raise TypeError("Unable to find 2FA continue button")
 
     # Waiting until redirected to store - captcha detection workaround
     wait_redirect_count = 0
@@ -186,12 +193,13 @@ def log_into_account(email, password, two_fa_key=None):
             has_warned_captcha = True
         time.sleep(1)
         wait_redirect_count += 1
-    print("Successfully logged in " + email)
+    print("Successfully logged in manually")
     browser.get(epic_store_url) # So it automatically waits until page is loaded
     wait_until_xpath_visible("//*[@id='siteNav']")
     time.sleep(1)
     
-def log_out():    
+def log_out():
+    browser.delete_all_cookies()
     browser.get(epic_logout_url + "?redirectUrl=" + uriencode(epic_store_url))
     wait_redirect_count = 0
     has_warned_logout = False
@@ -206,8 +214,9 @@ def log_out():
 def get_free_games_list():   
     if not re.search(epic_store_url, browser.current_url):
         browser.get(epic_store_url)
-        wait_until_xpath_visible("//*[@id='siteNav']")
-        time.sleep(1)
+        
+    wait_until_xpath_visible("//*[@id='siteNav']")
+    time.sleep(1)
     
     free_now_xpath_str = "//*[translate(text(),'FREE NOW','free now') = 'free now']"
     get_it_free_xpath_str = "//*[translate(text(),'GET IT FREE','get it free') = 'get it free']"           
@@ -286,9 +295,55 @@ def wait_until_xpath_visible(xstr, wait_duration=10):
     
 def show_exception_and_exit(exc_type, exc_value, tb):
     traceback.print_exception(exc_type, exc_value, tb)
-    input("Press key to exit.")
+    # input("Press key to exit.")
     browser.quit()
     sys.exit(-1)
+    
+def log_into_account_using_cookies(email):
+    try:
+        print("Logging into account using cookies")
+        cookies_json = json.load( open("cookies.json", "r") )
+    except:
+        print("Failed to log in using cookies")
+        return False
+    
+    if email not in cookies_json:
+        print("Failed to log in using cookies")
+        return False
+        
+    browser.get(epic_store_url)
+    wait_until_xpath_visible("//*[@id='siteNav']", 1)
+    for cookie in cookies_json[email]:
+        browser.add_cookie(cookie)
+    browser.get(epic_store_url)
+    wait_until_xpath_visible("//*[@id='siteNav']", 1)
+    if wait_until_xpath_visible("//div[@id='user' and contains(@class, 'signed-in')]", 1):
+        print("Successfully logged in using cookies")
+        return True
+    else:
+        print("Failed to log in using cookies")
+
+def save_account_cookies(email):
+    disallowed_cookies = ["store-token", "EPIC_SESSION_DIESEL"]
+    browser_cookies = browser.get_cookies()
+    browser_cookies_clean = []
+    for cookie in browser_cookies:
+        cookie_name = cookie.get('name', None)
+        cookie_expiry = cookie.get('expiry', None)
+        if cookie_name not in disallowed_cookies:
+            if cookie_expiry:
+                cookie["expiry"] = round(time.time()+(86400*30)) # 86400 = a day
+            browser_cookies_clean.append(cookie)
+
+    try:
+        cookies_json = json.load( open("cookies.json", "r") )
+        cookies_json[email] = browser_cookies_clean
+        json.dump(cookies_json, open("cookies.json", "w") )
+        return True
+    except:
+        print("Cookies file does not exist or is invalid")
+        json.dump({email:browser_cookies_clean}, open("cookies.json", "w") )
+        return False
    
 ##### MAIN #####
 sys.excepthook = show_exception_and_exit
@@ -301,13 +356,15 @@ epic_logout_url = "https://www.epicgames.com/id/logout"
 
 browser = start_firefox_browser(user_agent)
 for index, account in enumerate(credentials):
-    if len(account) == 3:
-        log_into_account(account[0], account[1], account[2])
-    else:
-        log_into_account(account[0], account[1])
-    if index == 0:
+    print(account[0])
+    if not log_into_account_using_cookies(account[0]):
+        if len(account) == 3:
+            log_into_account(account[0], account[1], account[2])
+        else:
+            log_into_account(account[0], account[1])
         accept_cookies()
     claim_free_games()
+    save_account_cookies(account[0])
     log_out()
 browser.quit()
 if game_claim_errors_count > 0:
