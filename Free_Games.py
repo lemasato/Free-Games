@@ -2,10 +2,6 @@
 # Free_Games.py - A script that Windows Task Scheduler can run to go and get me them sweet sweet free games I'll probably never play
 
 ##################### EDIT THESE ###############################
-# Replace these with your info
-credentials = []
-credentials.append(["myemail@domain.com", "password", "5MBJBQUZRU9K1XULAIL8FKH0UPDX6LDESZEHOFMCIBCYSZ2UEYTQ"]) # Example for account with 2FA
-credentials.append(["myemail@domain.com", "password"]) # Example for account without 2FA
 
 # You will want to replace the user-agent below for yours. Just Google 'what is my user agent' and copy that between the single quotes below
 user_agent = ''
@@ -354,6 +350,12 @@ epic_store_url = "https://www.epicgames.com/store/en-US"
 epic_login_url = "https://www.epicgames.com/id/login/epic"
 epic_logout_url = "https://www.epicgames.com/id/logout"
 
+if os.path.isfile("credentials.json"):
+    try:
+        credentials = json.load( open("credentials.json") )       
+    except:
+        raise TypeError("credentials.json is invalid")
+    
 browser = start_firefox_browser(user_agent)
 for index, account in enumerate(credentials):
     print(account[0])
