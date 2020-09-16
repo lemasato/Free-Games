@@ -2,9 +2,11 @@
 # Free_Games.py - A script that Windows Task Scheduler can run to go and get me them sweet sweet free games I'll probably never play
 
 ##################### EDIT THESE ###############################
+# Replace these with your info
+credentials = [os.getenv("USERNAME"), os.getenv("PASSWORD"), os.getenv("TFA_TOKEN") if len(os.getenv("TFA_TOKEN") > 0 else None)]
 
-# You will want to replace the user-agent below for yours. Just Google 'what is my user agent' and copy that between the single quotes below
-user_agent = ''
+# You may desire to replace the user-agent below. You can leave it as is or google 'what is my user agent' and copy that between the single quotes below
+user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
 ##################### EDIT THESE ###############################
 
 
@@ -367,10 +369,7 @@ browser = start_firefox_browser(user_agent)
 for index, account in enumerate(credentials):
     print(account[0])
     if not log_into_account_using_cookies(account[0]):
-        if len(account) == 3:
-            log_into_account(account[0], account[1], account[2])
-        else:
-            log_into_account(account[0], account[1])
+        log_into_account(*account)
         accept_cookies()
     claim_free_games()
     save_account_cookies(account[0])
